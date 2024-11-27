@@ -8,11 +8,11 @@ from scapy.all import sniff
 def get_default_gateway_ip():
     # Create a DHCP discover packet
     discover = Ether(dst='ff:ff:ff:ff:ff:ff', src=Ether().src, type=0x0800) / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(
-        dport=67, sport=68) / BOOTP(op=1, chaddr=Ether().src) / DHCP(options=[('message-type', 'discover'), ('end')])
+        dport=67, sport=68) / BOOTP(op=1, chaddr=Ether().src) / DHCP(options=[('message-type', 'request'), ('end')])
 
     # Send the packet and wait for a response
     sendp(discover)
-    pkt = sniff(filter=DHCP, count=10) 
+    pkt = sniff(filter="udp", count=10)
     print (pkt.summary()) 
     return None
 
