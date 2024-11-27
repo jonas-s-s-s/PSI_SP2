@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Topology</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 2% 12.5%;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+        }
+        a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        .summary {
+            margin-top: 40px;
+            padding: 20px;
+            background-color: #ecf0f1;
+            border: 1px solid #bdc3c7;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+<h1>KIV/PSI 2024/2025</h1>
+<h2>2. úloha – Topologie sítě</h2>
+
+<h3>Zadání:</h3>
+<p>Implementujte aplikaci, která automaticky zjistí topologii sítě.</p>
+
+<h3>Popis:</h3>
+<p>Implementujte aplikaci v programovacím jazyce <strong>Python</strong>, která automaticky zjistí topologii sítě, ve které se nachází.
+    Aplikace ke zjištění topologie využívá protokol <strong>SNMP</strong>, pomocí kterého získá ze směrovačů obsah směrovacích tabulek.</p>
+
+<p>Nejprve pomocí <strong>DHCP</strong> získá adresu výchozího směrovače, adresy dalších směrovačů pak rekurzivním způsobem z obsahu směrovacích tabulek jednotlivých směrovačů. Je nutné si uvědomit, že směrovač má zpravidla více rozhraní a je tedy identifikován více IP adresami.</p>
+
+<p>Relevantní <strong>SNMP</strong> objekty týkající se směrovací tabulky, rozhraní a IP adres směrovače najdete v dokumentu <strong>RFC-1213</strong>.</p>
+
+<h3>Technické podmínky:</h3>
+<ul>
+    <li>K implementaci použijte referenční <strong>GNS3 projekt</strong>, který je dostupný na adrese:
+        <a href="https://home.zcu.cz/~maxmilio/PSI/psi-example-project-1.gns3project" target="_blank">psi-example-project-1.gns3project</a>.
+        Lze jej snadno naimportovat do GNS3 přes funkci „File/Import portable project“.</li>
+
+    <li>Aplikaci implementujte v programovacím jazyce <strong>Python (verze 3)</strong> pomocí knihoven:
+        <ul>
+            <li><strong>Scapy</strong>: <a href="https://scapy.net/" target="_blank">Scapy Documentation</a></li>
+            <li><strong>PySNMP</strong>: <a href="https://pysnmp.readthedocs.io/en/latest/" target="_blank">PySNMP Documentation</a></li>
+        </ul>
+    </li>
+
+    <li>Aplikace bude zveřejněna ve veřejném repozitáři na <strong>GitHub</strong>, tak aby ji bylo možné na libovolném uzlu <code>psi-base-node-*</code> naklonovat a spustit.</li>
+
+    <li>Všechny potřebné knihovny a nástroje jsou již předinstalovány v <strong>GNS3 appliance</strong> <code>psi-base-node</code>.</li>
+</ul>
+
+<h3>Odevzdání:</h3>
+<ul>
+    <li>Dokumentace musí obsahovat stručný popis funkce implementovaného software, jak je možné aplikaci sestavit a spustit.</li>
+    <li>Dokumentaci zpracujte ve formě souboru <code>README.md</code>, který umístíte v kořenovém adresáři repozitáře úlohy. K formátování dokumentace použijte značkovací jazyk <strong>Markdown</strong>.</li>
+    <li>Zdrojové kódy nahrajte do repozitáře na <strong>GitHub</strong>.</li>
+    <li>V <strong>MS Teams</strong> v týmu <strong>KIV/PSI</strong> svoji práci odevzdejte tak, že připojíte pouze odkaz do repozitáře.</li>
+</ul>
+
+<h3>Zdroje informací:</h3>
+<ul>
+    <li><strong>Markdown Guide</strong>: <a href="https://www.markdownguide.org/getting-started/" target="_blank">Getting Started with Markdown</a></li>
+    <li><strong>Management Information Base for Network Management of TCP/IP-based internets: MIB-II</strong>:
+        <a href="https://www.rfc-editor.org/rfc/rfc1213.html" target="_blank">RFC-1213</a></li>
+    <li><strong>Scapy</strong>:
+        <a href="https://scapy.net/" target="_blank">Scapy Homepage</a>,
+        <a href="https://github.com/secdev/scapy/blob/master/doc/notebooks/Scapy%20in%2015%20minutes.ipynb" target="_blank">Scapy in 15 Minutes</a>,
+        <a href="https://scapy.readthedocs.io/en/latest/api/scapy.html" target="_blank">Scapy API Documentation</a></li>
+    <li><strong>SNMP Library for Python</strong>: <a href="https://pysnmp.readthedocs.io/en/latest/" target="_blank">PySNMP Documentation</a></li>
+    <li><strong>GNS3 appliance `psi-base-node`</strong>:
+        <a href="https://github.com/maxotta/kiv-psi-base-docker" target="_blank">GitHub Repository</a></li>
+</ul>
+</body>
+</html>
