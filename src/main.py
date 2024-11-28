@@ -1,44 +1,55 @@
-from pysnmp.hlapi import *
-from scapy.layers.dhcp import BOOTP, DHCP
-from scapy.layers.inet import *
-from scapy.layers.l2 import *
-from scapy.volatile import RandMAC
-from scapy.all import sniff
+#!/usr/bin/env python3
+from scapy.all import *
+from threading import Thread, Event
+from time import sleep
+from datetime import datetime
 
-def get_default_gateway_ip():
-    # Create a DHCP discover packet
-    discover = Ether(dst='ff:ff:ff:ff:ff:ff', src=Ether().src, type=0x0800) / IP(src='0.0.0.0', dst='255.255.255.255') / UDP(
-        dport=67, sport=68) / BOOTP(op=1, chaddr=Ether().src) / DHCP(options=[('message-type', 'request'), ('end')])
+class DhcpTester:
+    def __init__(self):
+        self.stop_sniffer = Event()
 
-    # Send the packet and wait for a response
-    sendp(discover)
-    pkt = sniff(filter="udp", count=10)
-    print (pkt.summary()) 
-    return None
+    def listen(self):
+        """Sniff for DHCP packets."""
+        sniff(
+            filter="udp and (port 67 or port 68)",
+            prn=self.handle_dhcp,
+            store=0,
+            stop_filter=lambda _: self.stop_sniffer.is_set(),
+        )
 
+    def handle_dhcp(self, pkt):
+        """Print information about DHCP packets."""
+        if DHCP in pkt:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            dhcp_type = pkt[DHCP].options[0][1]
+            message_types = {1: "DISCOVER", 2: "OFFER", 3: "REQUEST", 5: "ACK", 6: "NAK"}
+            msg = message_types.get(dhcp_type, "UNKNOWN")
+            print(f"[{timestamp}] DHCP {msg}: {pkt[DHCP].options}")
 
-def main():
-    # Initialize necessary components
-    print("Starting network topology discovery...")
+    def discover(self, iface, mac):
+        """Send a DHCP Discover packet."""
+        discover_pkt = (
+                Ether(src=mac, dst="ff:ff:ff:ff:ff:ff")
+                / IP(src="0.0.0.0", dst="255.255.255.255")
+                / UDP(sport=68, dport=67)
+                / BOOTP(chaddr=bytes.fromhex(mac.replace(":", "")), xid=RandInt())
+                / DHCP(options=[("message-type", "discover"), "end"])
+        )
+        sendp(discover_pkt, iface=iface)
 
-    # Step 1: Get IP of default gateway router via DHCP
-    default_gateway_ip = get_default_gateway_ip()
-    print(f"Default gateway IP: {default_gateway_ip}")
-
-    # # Step 2: Get default gateway's routing table via SNMP
-    # routing_table = get_routing_table(default_gateway_ip)
-    # print(f"Routing table: {routing_table}")
-    #
-    # # Step 3: Save info about all devices connected to default gateway
-    # devices_info = save_connected_devices_info(routing_table)
-    # print(f"Connected devices info: {devices_info}")
-    #
-    # # Step 4: Get IPs of routers connected to default gateway
-    # connected_routers_ips = get_connected_routers_ips(routing_table)
-    # print(f"Connected routers IPs: {connected_routers_ips}")
-
-    print("Network topology discovery completed.")
-
+    def sniff_and_discover(self, iface, mac):
+        """Run sniffing and send a DHCP Discover packet."""
+        listener = Thread(target=self.listen)
+        listener.start()
+        sleep(0.5)
+        self.discover(iface, mac)
+        sleep(2)
+        self.stop_sniffer.set()
+        listener.join()
 
 if __name__ == "__main__":
-    main()
+    INTERFACE = "eth0"
+    MAC_ADDRESS = Ether().src
+
+    dhcp_tester = DhcpTester()
+    dhcp_tester.sniff_and_discover(INTERFACE, MAC_ADDRESS)
