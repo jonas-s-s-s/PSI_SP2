@@ -286,10 +286,6 @@ L        192.168.1.2/32 is directly connected, GigabitEthernet3/0
 10.0.2.254
 192.168.1.2
 
-FOR ALL ROUTE DEST:
-if IS not in EXPLORED_ROUTERS and IS a LOCAL connection (directly connected to router)
--> then mark it as a client endpoint
-
 FOR ALL ROUTE NEXT HOPS:
 if IS not in EXPLORED_ROUTERS and IS not 0.0.0.0:
 -> launch SNMP exploration here

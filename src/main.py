@@ -6,6 +6,7 @@ from datetime import datetime
 import asyncio
 import re
 from pysnmp.hlapi.v3arch.asyncio import *
+import time
 
 
 # ******************************************************************
@@ -66,7 +67,7 @@ async def get_snmp_sysDescr(ip):
             "{} at {}".format(
                 errorStatus.prettyPrint(),
                 errorIndex and varBinds[int(errorIndex) - 1][0] or "?",
-                )
+            )
         )
     else:
         for varBind in varBinds:
@@ -75,10 +76,11 @@ async def get_snmp_sysDescr(ip):
     snmpEngine.closeDispatcher()
     return "\n".join(result)
 
+
 #############################################
 # SNMP INTERFACES
 #############################################
-async def get_snmp_ipAddrEntry(ip):
+async def get_snmp_interfaces(ip):
     engine = SnmpEngine()
     interfaces = {}
     _objTypesMap = {
@@ -109,7 +111,7 @@ async def get_snmp_ipAddrEntry(ip):
             raise Exception(f"Error: get_snmp_ipAddrEntry() - objectType {objectType} is not in the _objTypesMap.")
         typeOfRecord = _objTypesMap[objectType]
         # Uncomment on debug:
-        #print(objectType, "\t", recordId, "\t", typeOfRecord, "\n")
+        # print(objectType, "\t", recordId, "\t", typeOfRecord, "\n")
 
         if recordId in interfaces:
             interfaces[recordId][typeOfRecord] = value
@@ -133,6 +135,48 @@ async def get_snmp_ipAddrEntry(ip):
     engine.closeDispatcher()
 
     return interfaces
+
+
+#############################################
+# SNMP ARP TABLE
+#############################################
+async def get_snmp_arp_table(ip):
+    engine = SnmpEngine()
+    arp_table_devices = set()
+
+    async def _send_get_next(oid):
+        errorIndication, errorStatus, errorIndex, varBinds = await nextCmd(
+            engine,
+            CommunityData('public'),
+            await UdpTransportTarget.create((ip, 161)),
+            ContextData(),
+            ObjectType(ObjectIdentity(oid))
+        )
+        return varBinds[0][0].getOid().prettyPrint(), varBinds[0][1].prettyPrint()
+
+    def _process_arp_record(oid, value):
+        # First 10 number groups separated by the "." character
+        objectType = re.search(r'^(\d+)([.]\d+){9}', oid).group(0)
+        if objectType == "1.3.6.1.2.1.3.1.1.3":
+            arp_table_devices.add(value)
+
+    initial_oid = "1.3.6.1.2.1.3.1"
+    oid = initial_oid
+    responseValue = None
+
+    nextRequestNum = 0
+    while initial_oid in oid:
+        if responseValue:
+            print(f"get-response: {oid} = {responseValue}")
+            _process_arp_record(oid, responseValue)
+
+        oid, responseValue = await _send_get_next(oid)
+        nextRequestNum += 1
+
+    print(f"\nSent {nextRequestNum} get-next-request packets in total.")
+    engine.closeDispatcher()
+
+    return arp_table_devices
 
 
 #############################################
@@ -172,7 +216,7 @@ class RoutingRecordsCache:
             raise Exception(f"Error: parse_record() - objectType {objectType} is not in the _objTypesMap.")
         typeOfRecord = self._objTypesMap[objectType]
         # Uncomment on debug:
-        #print(objectType, "\t", recordId, "\t", typeOfRecord, "\n")
+        # print(objectType, "\t", recordId, "\t", typeOfRecord, "\n")
 
         # recordId serves as a unique identifier of this routing table record
         if recordId in self.routeDict:
@@ -219,6 +263,7 @@ class SnmpRoutingTableProcessor:
 
         print(f"\nSent {nextRequestNum} get-next-request packets in total.")
         return self.records_cache.get_table_entries()
+
 
 # ******************************************************************
 # *** DHCP FUNCTIONS
@@ -296,41 +341,108 @@ def get_dhcp_server_ip():
 
 
 # ******************************************************************
-# *** MAIN - PROGRAM ENTRY POINT
+# *** MAIN PROGRAM LOGIC
 # ******************************************************************
+
+async def snmp_explore(ip, explored_router_ips, topology_routers):
+    endpoint_devices_log = []
+    interface_log = []
+    discovered_routers = set()
+
+    print("\n-------------------------------")
+    print(f"Exploring {ip}...")
+    print("-------------------------------\n")
+
+    hasSnmp = await is_snmp_running(ip)
+    print(f"Is {ip} an SNMP agent? Result: {hasSnmp}")
+    if not hasSnmp:
+        print("Cannot proceed further. This device doesn't support SNMP.")
+        return None, None
+    print("----------------------------------------------------------")
+
+    print(f"Getting interface info for {ip} via SNMP...\n")
+    interfaces = await get_snmp_interfaces(ip)
+    for iface in interfaces:
+        explored_router_ips.add(interfaces[iface]["ipAdEntAddr"])
+        interface_log.append(
+            f"{interfaces[iface]['ipAdEntIfIndex']}\t\t{interfaces[iface]['ipAdEntAddr']}\t\t{interfaces[iface]['ipAdEntNetMask']}")
+    print("----------------------------------------------------------")
+
+    print(f"Getting ARP table info for {ip} via SNMP...\n")
+    arpTableEntries = await get_snmp_arp_table(ip)
+    for endpointIp in arpTableEntries:
+        if endpointIp not in explored_router_ips:
+            endpoint_devices_log.append(endpointIp)
+    print("----------------------------------------------------------")
+
+    print(f"Getting routing table info for {ip} via SNMP...\n")
+    rtProcessor = SnmpRoutingTableProcessor(ip)
+    tableEntries = await rtProcessor.get_snmp_ipCidrRouteTable()
+    for entry in tableEntries:
+        nextHop = tableEntries[entry]["ipCidrRouteNextHop"]
+
+        if nextHop in explored_router_ips:
+            continue
+        if nextHop == "0.0.0.0":
+            continue
+
+        discovered_routers.add(tableEntries[entry]["ipCidrRouteNextHop"])
+    print("----------------------------------------------------------")
+
+    print(f"Discovered unexplored routers: {discovered_routers}\n")
+    router_info = {"ip": ip, "interfaces": interface_log, "endpoints": endpoint_devices_log}
+
+    return discovered_routers, router_info
+
 async def main():
     # Set containing IPs of all already explored router interfaces
-    explored_routers = set()
+    explored_router_ips = set()
+    # Final results saved here. For each router we gather interface IPs and devices directly connected to it
+    topology_routers = []
 
     dhcp_server_ip = get_dhcp_server_ip()
 
     print("\nLocal DHCP server's IP is:", dhcp_server_ip)
     print("----------------------------------------------------------")
 
-    hasSnmp = await is_snmp_running(dhcp_server_ip)
-    print(f"Is {dhcp_server_ip} a SNMP agent? Result: {hasSnmp}")
-    print("----------------------------------------------------------")
+    unexplored_routers = [dhcp_server_ip]
+    while len(unexplored_routers) != 0:
+        ip = unexplored_routers.pop()
+        discovered, router_info = await snmp_explore(ip, explored_router_ips, topology_routers)
+        if discovered is None:
+            continue
+        topology_routers.append(router_info)
 
-    if not hasSnmp:
-        print("ERROR: Cannot proceed further. This router doesn't support SNMP.")
-        return
+        for e in discovered:
+            if e not in unexplored_routers:
+                unexplored_routers.append(e)
 
-    print(f"Getting interface info for {dhcp_server_ip} via SNMP...\n")
-    interfaces = await get_snmp_ipAddrEntry(dhcp_server_ip)
-    for iface in interfaces:
-        explored_routers.add(interfaces[iface]["ipAdEntAddr"])
-        # TODO - Map ifaces
-    print("----------------------------------------------------------")
+    print("\n-------------------------------")
+    print("All routers have been explored.")
+    print("-------------------------------")
 
+    with open("out.txt", "w") as file:
+        file.write(
+            f"Result of network topology scan at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S ') + time.tzname[0]}\n")
+        n = 1
+        for router in topology_routers:
+            file.write("\n####################################################\n")
+            file.write(f"ROUTER No. {n} ({router['ip']})\n")
+            file.write("\nEndpoints connected to this router:\n")
+            for endpoint in router["endpoints"]:
+                file.write(f"{endpoint}\n")
+            file.write("\nInterfaces of this router:\n")
+            file.write("No.\t\tIP\t\tMask\n")
+            for iface in router["interfaces"]:
+                file.write(f"{iface}\n")
+            n += 1
 
-    print(f"Getting routing table info for {dhcp_server_ip} via SNMP...\n")
-    rtProcessor = SnmpRoutingTableProcessor(dhcp_server_ip)
-    tableEntries = await rtProcessor.get_snmp_ipCidrRouteTable()
-    print("----------------------------------------------------------")
-
-    # FOR EACH DESTINATION IP IN ROUTER'S ROUTING TABLE:
+    print("\n-------------------------------")
+    print("Results written into ./out.txt")
+    print("-------------------------------\n")
 
 
 if __name__ == "__main__":
+    # Start main function
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
